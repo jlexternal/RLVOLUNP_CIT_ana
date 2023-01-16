@@ -125,7 +125,7 @@ for imeas = 1:2
             x = 1-prep_raw(idx_incl,icond);
             y = 1-prep_raw(idx_incl,jcond);
         end
-        [p,~,stats] = ttest(x,y);
+        [p,~,stats] = signrank(x,y);
         fprintf('%s vs %s: p=%.4f, z=%+.4f\n',condstr{icond},condstr{jcond},p,stats.zval);
     end
     disp(' ');
