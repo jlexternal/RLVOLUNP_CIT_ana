@@ -3,7 +3,7 @@ clear all
 clc
 % -------------- Input: --------------
 %
-nameofdataset = 'first'; % 'first' or 'second'
+nameofdataset = 'second'; % 'first' or 'second'
 %
 % ------------------------------------
 assert(ismember(nameofdataset,{'first','second'}),'Check value of nameofdataset!');
@@ -153,7 +153,7 @@ for icond = 1:3
     disp(' ')
 end
 
-%% Figure 2B (first dataset) | Supplementary Figure 1B (second dataset)
+%% Figure 2C (first dataset) | Supplementary Figure 1C (second dataset)
 clc
 % Figure 2B
 fprintf('\nMedian values [& interquartile range] of model fit parameters:\n');
@@ -166,7 +166,7 @@ for ipar = 1:4
     end
 end
 
-% Statistics for Figure 3A
+% Statistics for Figure 2C
 fprintf('\nStatistics: condition-wise parameter differences (signed-rank tests)\n');
 cs = nchoosek(1:3,2);
 for ipar = 1:4
@@ -222,7 +222,6 @@ for imeas = 1:2
     sw   = tiedrank(dim_data(idx_incl,3));
     icar = tiedrank(dim_data(idx_incl,4));
     y    = tiedrank(y);
-
     X   = table(age,sex,ad,cit,sw,icar,y);
     mdl = fitglm(X);
     if strcmpi(nameofdataset,'first') 
@@ -256,6 +255,107 @@ for imeas = 1:2
     fprintf('Correlation %s-%s: r=%+.2f, p=%.4f\n','CIT',measstr,r,p);
     disp(' ');
 end
+
+%% Bayes Factor tests on correlations of CIT and model parameters 
+% To determine the strength of the likelihood of the 
+% alternative hypothesis H1 against the null (H0)
+% H1: There is a relationship between CIT and parameter
+% H0: There is no relationship between CIT and parameter
+
+addpath('./toolbox/bayesFactorMatlab/')
+
+cit = dim_data(idx_incl,2);
+for ipar = [1 3 4]
+    y = mean(pars(idx_incl,ipar,:),3);
+    y_logt = log(pars(idx_incl,ipar,:));
+    switch ipar
+        case 1
+            measstr = 'learning rate';
+            y_logt = log(pars(idx_incl,ipar,:)) - log(1-pars(idx_incl,ipar,:));
+        case 3
+            measstr = 'learning noise';
+        case 4
+            measstr = 'choice temperature';
+    end
+    y_logt = mean(y_logt,3);
+    
+    % nonparametric correlations
+    [r,p] = corr(y,cit,'Type','Spearman');
+    fprintf('Corr (Spearman) %s-%s: r=%+.2f, p=%.4f\n','CIT',measstr,r,p);
+
+    % calculate bayes factor test for correlations
+    [BF10,r,p] = bf.corr(y_logt,cit);
+    fprintf('Corr (Pearson) %s-%s: r=%+.2f, p=%.4f\n','CIT',measstr,r,p);
+    fprintf('Bayes Factor (BF 10): %.3f\n', BF10)
+    
+end
+
+%% Differences of the correlation of CIT with learning vs policy parameters
+% To determine the strength of the likelihood of the 
+% alternative hypothesis H1 against the null (H0)
+% H1: The effect of param1 is greater than param2
+% H0: The effect of param1 is NOT greater than param2
+
+addpath('./toolbox/bayesFactorMatlab/')
+nsamp = 1e4;
+
+z_diffs = nan(nsamp,2);
+r_diffs = nan(nsamp,2);
+cit = dim_data(idx_incl,2);
+tau = mean(log(pars(idx_incl,4,:)),3);
+for isamp = 1:nsamp+1
+    idx_subj = randsample(nsubj,nsubj,true);
+    for ipar = [1 3]
+        y = pars(idx_incl,ipar,:);
+        switch ipar
+            case 1
+                measstr = 'learning rate';
+                iloc = 1;
+                y = log(y) - log(1-y);
+            case 3
+                measstr = 'learning noise';
+                iloc = 2;
+        end
+        y = mean(y,3);
+        if isamp == 1
+            idx = 1:nsubj;
+        else
+            idx = idx_subj;
+        end
+        % correlations
+        [r13,~] = corr(tau(idx),cit(idx),'Type','Pearson'); % choice temp ~ CIT
+        [r23,~] = corr(y(idx),cit(idx),'Type','Pearson'); % learning param ~ CIT
+        [r12,~] = corr(tau(idx),y(idx),'Type','Pearson'); % choice temp ~ learning param 
+
+        % z-transform corr coeffs
+        z13 = atanh(r13);
+        z23 = atanh(r23);
+        
+        % calculate se for dependent correlations
+        r2bar = (r13^2+r23^2)/2;
+        f = min((1-r12)/(2*(1-r2bar)),1);
+        h = (1-f*r2bar)/(1-r2bar);
+        se = sqrt((2*h*(1-r12))/(nsubj-3));
+
+        % compute z-difference
+        z_diffs(isamp,iloc) = (z13-z23)/se;
+        r_diffs(isamp,iloc) = tanh(z_diffs(isamp,iloc));
+        if isamp == 1
+            fprintf('True difference (z) = %.3f\n',z_diffs(isamp,iloc));
+        end
+    end
+end
+
+qs1 = quantile(z_diffs(:,1),[.05 .5]);
+qs2 = quantile(z_diffs(:,2),[.05 .5]);
+fprintf('Assuming r(tau,CIT)>r(lpar,CIT)... (one-sided test)...\n')
+fprintf('.95 lower confidence bound of Δ(z(tau,CIT), z(alpha,CIT)) = %.2f\n', qs1(1))
+fprintf('.95 lower confidence bound of Δ(z(tau,CIT), z(zeta,CIT)) = %.2f\n', qs2(1))
+
+histogram(z_diffs(:,1),'Normalization','pdf')
+hold on
+histogram(z_diffs(:,2),'Normalization','pdf')
+xline(0)
 
 %% Figure 5
 % Note:
@@ -347,7 +447,6 @@ for imeas = 1:2
         % distribution than in the distribution of S+
         fprintf('BF_S0 = %.2f\n',p_0/p_1);
         
-
         p_0 = normpdf(z_s,z_v,std);   % H0: Observing no correlation when there is none
         p_1 = normpdf(z_s,z_r,std); % H1: Observing no correlation in S+
 
@@ -365,7 +464,7 @@ end
 % see script_fig6.m
 %
 
-%% Supplementary Figure 5
+%% Supplementary Figure 6
 clc
 for imeas = 1:4
     switch imeas

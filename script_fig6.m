@@ -116,8 +116,10 @@ fprintf('Done.\n\n');
 close all
 clc
 
+addpath('./toolbox')
+
 % set analysis parameters
-ipar = 4; % model parameter index
+ipar = 3; % model parameter index
 icctype = 'A-1'; % ICC type
 
 % compute ICC
@@ -127,6 +129,7 @@ icc_hic = nan(1,4);
 pval    = nan(1,4);
 for icond = 1:3
     [icc_hat(icond),icc_loc(icond),icc_hic(icond),~,~,~,pval(icond)] = ICC([xvar(:,ipar,icond),yvar(:,ipar,icond)],icctype);
+    fprintf('cond %d: p=%.4f\n',icond,pval(icond))
 end
 [icc_hat(4),icc_loc(4),icc_hic(4),~,~,~,pval(4)] = ICC([mean(xvar(:,ipar,:),3),mean(yvar(:,ipar,:),3)],icctype);
 
@@ -526,8 +529,11 @@ clc
 
 % add MediationToolbox and dependent folders to path
 addpath('./toolbox/MediationToolbox/mediation_toolbox/');
+addpath(genpath('./toolbox/CanlabCore/'));
 addpath('./toolbox/MediationToolbox/mediation_toolbox/Boot_samples_needed_fcns/');
 addpath('./toolbox/MediationToolbox/geom2d/');
+
+samplestr = {'first','second'};
 
 % set analysis parameters
 isample = [1]; % sample number
@@ -535,34 +541,35 @@ use_logtr = true; % use log-transform?
 nboot = 1e5; % number of bootstrap resamples
 
 nsample = numel(isample);
+
 if nsample == 1
     % load data from single sample
-    load(sprintf('../out/pars_sample%d.mat',isample),'pars');
-    load(sprintf('../out/excl_cond_sample%d.mat',isample),'excl_cond');
-    load(sprintf('../out/psych_dim_icar_sample%d.mat',isample),'ques_data');
-    load(sprintf('../out/pcor_sample%d.mat',isample),'pcor_cond');
-    load(sprintf('../out/prep_sample%d.mat',isample),'prep_cond');
+    load(sprintf('./data/parameter_fits_%s.mat',samplestr{isample}),'pars');
+    load(sprintf('./data/idx_incl_task_%s.mat',samplestr{isample}),'idx_incl');
+    load(sprintf('./data/dimension_scores_icar_excl_%s.mat',samplestr{isample}),'ques_data');
+    load(sprintf('./data/pcorrect_average_%s.mat',samplestr{isample}),'pcor_raw');
+    load(sprintf('./data/prepeat_average_%s.mat',samplestr{isample}),'prep_raw');
 else
     % load data from multiple samples
     pars_tmp = [];
-    excl_cond_tmp = [];
+    idx_incl_tmp  = [];
     ques_data_tmp = [];
     pcor_cond_tmp = [];
     prep_cond_tmp = [];
     for i = 1:nsample
-        load(sprintf('../out/pars_sample%d.mat',isample(i)),'pars');
-        load(sprintf('../out/excl_cond_sample%d.mat',isample(i)),'excl_cond');
-        load(sprintf('../out/psych_dim_icar_sample%d.mat',isample(i)),'ques_data');
-        load(sprintf('../out/pcor_sample%d.mat',isample(i)),'pcor_cond');
-        load(sprintf('../out/prep_sample%d.mat',isample(i)),'prep_cond');
+        load(sprintf('./data/parameter_fits_%s.mat',samplestr{isample(i)}),'pars');
+        load(sprintf('./data/idx_incl_task_%s.mat',samplestr{isample(i)}),'idx_incl');
+        load(sprintf('./data/dimension_scores_icar_excl_%s.mat',samplestr{isample(i)}),'ques_data');
+        load(sprintf('./data/pcorrect_average_%s.mat',samplestr{isample(i)}),'pcor_raw');
+        load(sprintf('./data/prepeat_average_%s.mat',samplestr{isample(i)}),'prep_raw');
         pars_tmp = cat(1,pars_tmp,pars);
-        excl_cond_tmp = cat(1,excl_cond_tmp,excl_cond);
+        idx_incl_tmp = cat(1,idx_incl_tmp,idx_incl);
         ques_data_tmp = cat(1,ques_data_tmp,ques_data);
-        pcor_cond_tmp = cat(1,pcor_cond_tmp,pcor_cond);
-        prep_cond_tmp = cat(1,prep_cond_tmp,prep_cond);
+        pcor_cond_tmp = cat(1,pcor_cond_tmp,pcor_raw);
+        prep_cond_tmp = cat(1,prep_cond_tmp,prep_raw);
     end
     pars = pars_tmp;
-    excl_cond = excl_cond_tmp;
+    idx_incl = idx_incl_tmp;
     ques_data = ques_data_tmp;
     pcor_cond = pcor_cond_tmp;
     prep_cond = prep_cond_tmp;
@@ -570,9 +577,8 @@ end
 
 % reorder conditions as 1=Ref 2=Unp 3=Vol
 pars      = pars(:,:,[1,3,2]);
-excl_cond = excl_cond(:,[1,3,2]);
-pcor_cond = pcor_cond(:,[1,3,2]);
-prep_cond = prep_cond(:,[1,3,2]);
+pcor_cond = pcor_raw(:,[1,3,2]);
+prep_cond = prep_raw(:,[1,3,2]);
 
 % use log-transform
 if use_logtr
@@ -584,7 +590,7 @@ if use_logtr
 end
 
 % exclude bad/missing subjects
-excl = any(excl_cond,2) | any(isnan(ques_data),2);
+excl = ~idx_incl | any(isnan(ques_data),2);
 xvar = pars(~excl,:,:);
 pcor = pcor_cond(~excl,:);
 prep = prep_cond(~excl,:);
